@@ -109,6 +109,7 @@ delvewheel repair --add-path "%VCPKG_BASE%\bin" pillow_simd-*.whl
 if %errorlevel% neq 0 (
     echo [ERROR] delvewheel repair failed with exit code %errorlevel%.
     echo This might be due to missing DLLs or other issues. Check the output above for details.
+    pause
     exit /b %errorlevel%
 )
 

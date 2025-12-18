@@ -5,30 +5,35 @@ This script replaces undefined 'uint' types with 'uint32_t' in the neighbor_map.
 
 import os
 import platform
+import re
 
 def fix_flexgemm_cuda_file():
     """Fix the FlexGEMM CUDA file by replacing 'uint' with 'uint32_t'."""
     file_path = 'tmp/extensions/FlexGEMM/flex_gemm/kernels/cuda/spconv/neighbor_map.cu'
     
-    if not os.path.exists(file_path):
-        print(f"File not found: {file_path}")
+    try:
+        if not os.path.exists(file_path):
+            print(f"File not found: {file_path}")
+            return
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Check if fixes are needed
+        original_content = content
+        content = content.replace('uint tmp = neigh_map[n * V + v];', 'uint32_t tmp = neigh_map[n * V + v];')
+        content = content.replace('*(uint*)&neigh_map_T[v * N + n + n_base] = tmp;', '*(uint32_t*)&neigh_map_T[v * N + n + n_base] = tmp;')
+        content = content.replace('*(uint*)&neigh_mask_T[v * N + n + n_base] = tmp;', '*(uint32_t*)&neigh_mask_T[v * N + n + n_base] = tmp;')
+        
+        if content != original_content:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print("Fixed FlexGEMM CUDA file for Windows compatibility.")
+        else:
+            print("FlexGEMM CUDA file already fixed or no changes needed.")
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"Error processing {file_path}: {e}")
         return
-    
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-    
-    # Check if fixes are needed
-    original_content = content
-    content = content.replace('uint tmp = neigh_map[n * V + v];', 'uint32_t tmp = neigh_map[n * V + v];')
-    content = content.replace('*(uint*)&neigh_map_T[v * N + n + n_base] = tmp;', '*(uint32_t*)&neigh_map_T[v * N + n + n_base] = tmp;')
-    content = content.replace('*(uint*)&neigh_mask_T[v * N + n + n_base] = tmp;', '*(uint32_t*)&neigh_mask_T[v * N + n + n_base] = tmp;')
-    
-    if content != original_content:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        print("Fixed FlexGEMM CUDA file for Windows compatibility.")
-    else:
-        print("FlexGEMM CUDA file already fixed or no changes needed.")
 
 def fix_cumesh_setup():
     """Fix the CuMesh setup.py by adding necessary compilation flags."""
@@ -38,8 +43,12 @@ def fix_cumesh_setup():
         print(f"File not found: {file_path}")
         return
     
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"Error reading {file_path}: {e}")
+        return
     
     original_content = content
     
@@ -64,52 +73,60 @@ def fix_cumesh_setup():
     
     # For cumesh._cubvh nvcc: add -Xcudafe --diag_suppress=2872
     cubvh_nvcc_old = '''"nvcc": ["-O3","-std=c++17"] + cc_flag + [
-                    "--extended-lambda",
-                    "--expt-relaxed-constexpr",
-                    # The following definitions must be undefined
-                    # since we need half-precision operation.
-                    "-U__CUDA_NO_HALF_OPERATORS__",
-                    "-U__CUDA_NO_HALF_CONVERSIONS__",
-                    "-U__CUDA_NO_HALF2_OPERATORS__",
-                ]'''
+                        "--extended-lambda",
+                        "--expt-relaxed-constexpr",
+                        # The following definitions must be undefined
+                        # since we need half-precision operation.
+                        "-U__CUDA_NO_HALF_OPERATORS__",
+                        "-U__CUDA_NO_HALF_CONVERSIONS__",
+                        "-U__CUDA_NO_HALF2_OPERATORS__",
+                    ]'''
     cubvh_nvcc_new = '''"nvcc": ["-O3","-std=c++17"] + cc_flag + [
-                    "--extended-lambda",
-                    "--expt-relaxed-constexpr",
-                    # The following definitions must be undefined
-                    # since we need half-precision operation.
-                    "-U__CUDA_NO_HALF_OPERATORS__",
-                    "-U__CUDA_NO_HALF_CONVERSIONS__",
-                    "-U__CUDA_NO_HALF2_OPERATORS__",
-                    "-Xcudafe", "--diag_suppress=2872",
-                ]'''
+                        "--extended-lambda",
+                        "--expt-relaxed-constexpr",
+                        # The following definitions must be undefined
+                        # since we need half-precision operation.
+                        "-U__CUDA_NO_HALF_OPERATORS__",
+                        "-U__CUDA_NO_HALF_CONVERSIONS__",
+                        "-U__CUDA_NO_HALF2_OPERATORS__",
+                        "-Xcudafe", "--diag_suppress=2872",
+                    ]'''
     if cubvh_nvcc_old in content:
         content = content.replace(cubvh_nvcc_old, cubvh_nvcc_new)
     
     if content != original_content:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        print("Fixed CuMesh setup.py for Windows compatibility.")
+        try:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print("Fixed CuMesh setup.py for Windows compatibility.")
+        except (OSError, UnicodeEncodeError) as e:
+            print(f"Error writing {file_path}: {e}")
+            return
     else:
         print("CuMesh setup.py already fixed or no changes needed.")
 
 def _apply_file_fixes(file_path, replacements, description):
     """Helper function to apply replacements to a file."""
-    if not os.path.exists(file_path):
+    try:
+        if not os.path.exists(file_path):
+            return
+        
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        original_content = content
+        for pattern, replacement in replacements:
+            content = re.sub(pattern, replacement, content)
+        
+        if content != original_content:
+            with open(file_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"Fixed {description} for MSVC compatibility.")
+        else:
+            print(f"{description} already fixed or no changes needed.")
+    except (OSError, UnicodeError) as e:
+        print(f"Error processing {file_path}: {e}")
         return
-    
-    with open(file_path, 'r', encoding='utf-8') as f:
-        content = f.read()
-    
-    original_content = content
-    for old, new in replacements:
-        content = content.replace(old, new)
-    
-    if content != original_content:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        print(f"Fixed {description} for MSVC compatibility.")
-    else:
-        print(f"{description} already fixed or no changes needed.")
 
 def fix_o_voxel_files():
     """Fix the o-voxel source files for MSVC compatibility."""
@@ -126,19 +143,15 @@ def fix_o_voxel_files():
     
     # Fix src/io/filter_neighbor.cpp
     neighbor_fixes = [
-        ('    // Pack the deltas into a uint8 tensor\n    torch::Tensor delta = torch::zeros({N, C}, torch::dtype(torch::kUInt8));',
-         '    // Pack the deltas into a uint8 tensor\n    torch::Tensor delta = torch::zeros({static_cast<int64_t>(N), static_cast<int64_t>(C)}, torch::dtype(torch::kUInt8));'),
-        ('    // Pack the attribute into a uint8 tensor\n    torch::Tensor attr = torch::zeros({N, C}, torch::dtype(torch::kUInt8));',
-         '    // Pack the attribute into a uint8 tensor\n    torch::Tensor attr = torch::zeros({static_cast<int64_t>(N), static_cast<int64_t>(C)}, torch::dtype(torch::kUInt8));'),
+        (r'(\s*)torch::Tensor\s+(\w+)\s*=\s*torch::zeros\(\{(\w+),\s*(\w+)\},\s*torch::dtype\(torch::kUInt8\)\);',
+         r'\1torch::Tensor \2 = torch::zeros({static_cast<int64_t>(\3), static_cast<int64_t>(\4)}, torch::dtype(torch::kUInt8));'),
     ]
     _apply_file_fixes(os.path.join(base_path, 'src/io/filter_neighbor.cpp'), neighbor_fixes, 'o-voxel src/io/filter_neighbor.cpp')
     
     # Fix src/io/filter_parent.cpp
     parent_fixes = [
-        ('    torch::Tensor delta = torch::zeros({N_leaf, C}, torch::kUInt8);',
-         '    torch::Tensor delta = torch::zeros({static_cast<int64_t>(N_leaf), static_cast<int64_t>(C)}, torch::kUInt8);'),
-        ('    torch::Tensor attr = torch::zeros({N_leaf, C}, torch::kUInt8);',
-         '    torch::Tensor attr = torch::zeros({static_cast<int64_t>(N_leaf), static_cast<int64_t>(C)}, torch::kUInt8);'),
+        (r'(\s*)torch::Tensor\s+(\w+)\s*=\s*torch::zeros\(\{(\w+),\s*(\w+)\},\s*torch::dtype\(torch::kUInt8\)\);',
+         r'\1torch::Tensor \2 = torch::zeros({static_cast<int64_t>(\3), static_cast<int64_t>(\4)}, torch::dtype(torch::kUInt8));'),
     ]
     _apply_file_fixes(os.path.join(base_path, 'src/io/filter_parent.cpp'), parent_fixes, 'o-voxel src/io/filter_parent.cpp')
     
