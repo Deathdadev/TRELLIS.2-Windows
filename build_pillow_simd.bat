@@ -44,6 +44,16 @@ if /i "!USE_UV!"=="Y" (
     set "PREP_CMD=python -m pip install"
 )
 
+REM Validate UV installation if selected
+if /i "!USE_UV!"=="Y" (
+    where uv >nul 2>&1
+    if !errorlevel! neq 0 (
+        echo [ERROR] 'uv' tool not found in PATH.
+        echo Falling back to standard pip to avoid installation failures.
+        set "PREP_CMD=python -m pip install"
+    )
+)
+
 REM --- STEP 2: Load VS Environment ---
 echo.
 echo [1/6] Loading Visual Studio Environment...
@@ -95,6 +105,12 @@ if exist wheelhouse rmdir /s /q wheelhouse
 
 REM Run delvewheel to bake the vcpkg DLLs into the wheel
 delvewheel repair --add-path "%VCPKG_BASE%\bin" pillow_simd-*.whl
+
+if %errorlevel% neq 0 (
+    echo [ERROR] delvewheel repair failed with exit code %errorlevel%.
+    echo This might be due to missing DLLs or other issues. Check the output above for details.
+    exit /b %errorlevel%
+)
 
 REM --- STEP 7: Cleanup ---
 echo [6/6] Cleaning up temporary files...

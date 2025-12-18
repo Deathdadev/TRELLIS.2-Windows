@@ -44,7 +44,8 @@ def fix_cumesh_setup():
     original_content = content
     
     # For cumesh._C nvcc: add -Xcudafe --diag_suppress=2872
-    if '"-Xcudafe"' not in content or '"--diag_suppress=2872"' not in content:
+    nvcc_section = content.split('"nvcc": [')[1].split('],')[0]
+    if '"-Xcudafe"' not in nvcc_section or '"--diag_suppress=2872"' not in nvcc_section:
         old = '"nvcc": ["-O3","-std=c++17"] + cc_flag,'
         new = '"nvcc": ["-O3","-std=c++17"] + cc_flag + [\n                    "-Xcudafe", "--diag_suppress=2872",\n                ],'
         content = content.replace(old, new)
@@ -91,99 +92,62 @@ def fix_cumesh_setup():
     else:
         print("CuMesh setup.py already fixed or no changes needed.")
 
+def _apply_file_fixes(file_path, replacements, description):
+    """Helper function to apply replacements to a file."""
+    if not os.path.exists(file_path):
+        return
+    
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    
+    original_content = content
+    for old, new in replacements:
+        content = content.replace(old, new)
+    
+    if content != original_content:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        print(f"Fixed {description} for MSVC compatibility.")
+    else:
+        print(f"{description} already fixed or no changes needed.")
+
 def fix_o_voxel_files():
     """Fix the o-voxel source files for MSVC compatibility."""
     base_path = 'tmp/extensions/o-voxel'
     
     # Fix src/io/svo.cpp
-    file_path = os.path.join(base_path, 'src/io/svo.cpp')
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        original_content = content
-        # Fix narrowing conversions
-        content = content.replace(
-            'torch::Tensor codes_tensor = torch::from_blob(codes.data(), {codes.size()}, torch::kInt32).clone();',
-            'torch::Tensor codes_tensor = torch::from_blob(codes.data(), {static_cast<int64_t>(codes.size())}, torch::kInt32).clone();'
-        )
-        content = content.replace(
-            'torch::Tensor svo_tensor = torch::from_blob(svo.data(), {svo.size()}, torch::kUInt8).clone();',
-            'torch::Tensor svo_tensor = torch::from_blob(svo.data(), {static_cast<int64_t>(svo.size())}, torch::kUInt8).clone();'
-        )
-        
-        if content != original_content:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print("Fixed o-voxel src/io/svo.cpp for MSVC compatibility.")
-        else:
-            print("o-voxel src/io/svo.cpp already fixed or no changes needed.")
+    svo_fixes = [
+        ('torch::Tensor codes_tensor = torch::from_blob(codes.data(), {codes.size()}, torch::kInt32).clone();',
+         'torch::Tensor codes_tensor = torch::from_blob(codes.data(), {static_cast<int64_t>(codes.size())}, torch::kInt32).clone();'),
+        ('torch::Tensor svo_tensor = torch::from_blob(svo.data(), {svo.size()}, torch::kUInt8).clone();',
+         'torch::Tensor svo_tensor = torch::from_blob(svo.data(), {static_cast<int64_t>(svo.size())}, torch::kUInt8).clone();'),
+    ]
+    _apply_file_fixes(os.path.join(base_path, 'src/io/svo.cpp'), svo_fixes, 'o-voxel src/io/svo.cpp')
     
     # Fix src/io/filter_neighbor.cpp
-    file_path = os.path.join(base_path, 'src/io/filter_neighbor.cpp')
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        original_content = content
-        # Fix narrowing conversions in tensor creations
-        content = content.replace(
-            '    // Pack the deltas into a uint8 tensor\n    torch::Tensor delta = torch::zeros({N, C}, torch::dtype(torch::kUInt8));',
-            '    // Pack the deltas into a uint8 tensor\n    torch::Tensor delta = torch::zeros({static_cast<int64_t>(N), static_cast<int64_t>(C)}, torch::dtype(torch::kUInt8));'
-        )
-        content = content.replace(
-            '    // Pack the attribute into a uint8 tensor\n    torch::Tensor attr = torch::zeros({N, C}, torch::dtype(torch::kUInt8));',
-            '    // Pack the attribute into a uint8 tensor\n    torch::Tensor attr = torch::zeros({static_cast<int64_t>(N), static_cast<int64_t>(C)}, torch::dtype(torch::kUInt8));'
-        )
-        
-        if content != original_content:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print("Fixed o-voxel src/io/filter_neighbor.cpp for MSVC compatibility.")
-        else:
-            print("o-voxel src/io/filter_neighbor.cpp already fixed or no changes needed.")
+    neighbor_fixes = [
+        ('    // Pack the deltas into a uint8 tensor\n    torch::Tensor delta = torch::zeros({N, C}, torch::dtype(torch::kUInt8));',
+         '    // Pack the deltas into a uint8 tensor\n    torch::Tensor delta = torch::zeros({static_cast<int64_t>(N), static_cast<int64_t>(C)}, torch::dtype(torch::kUInt8));'),
+        ('    // Pack the attribute into a uint8 tensor\n    torch::Tensor attr = torch::zeros({N, C}, torch::dtype(torch::kUInt8));',
+         '    // Pack the attribute into a uint8 tensor\n    torch::Tensor attr = torch::zeros({static_cast<int64_t>(N), static_cast<int64_t>(C)}, torch::dtype(torch::kUInt8));'),
+    ]
+    _apply_file_fixes(os.path.join(base_path, 'src/io/filter_neighbor.cpp'), neighbor_fixes, 'o-voxel src/io/filter_neighbor.cpp')
     
     # Fix src/io/filter_parent.cpp
-    file_path = os.path.join(base_path, 'src/io/filter_parent.cpp')
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        original_content = content
-        # Fix narrowing conversions in tensor creations
-        content = content.replace(
-            '    torch::Tensor delta = torch::zeros({N_leaf, C}, torch::kUInt8);',
-            '    torch::Tensor delta = torch::zeros({static_cast<int64_t>(N_leaf), static_cast<int64_t>(C)}, torch::kUInt8);'
-        )
-        content = content.replace(
-            '    torch::Tensor attr = torch::zeros({N_leaf, C}, torch::kUInt8);',
-            '    torch::Tensor attr = torch::zeros({static_cast<int64_t>(N_leaf), static_cast<int64_t>(C)}, torch::kUInt8);'
-        )
-        
-        if content != original_content:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print("Fixed o-voxel src/io/filter_parent.cpp for MSVC compatibility.")
-        else:
-            print("o-voxel src/io/filter_parent.cpp already fixed or no changes needed.")
+    parent_fixes = [
+        ('    torch::Tensor delta = torch::zeros({N_leaf, C}, torch::kUInt8);',
+         '    torch::Tensor delta = torch::zeros({static_cast<int64_t>(N_leaf), static_cast<int64_t>(C)}, torch::kUInt8);'),
+        ('    torch::Tensor attr = torch::zeros({N_leaf, C}, torch::kUInt8);',
+         '    torch::Tensor attr = torch::zeros({static_cast<int64_t>(N_leaf), static_cast<int64_t>(C)}, torch::kUInt8);'),
+    ]
+    _apply_file_fixes(os.path.join(base_path, 'src/io/filter_parent.cpp'), parent_fixes, 'o-voxel src/io/filter_parent.cpp')
     
     # Fix src/convert/flexible_dual_grid.cpp
-    file_path = os.path.join(base_path, 'src/convert/flexible_dual_grid.cpp')
-    if os.path.exists(file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        original_content = content
-        # Fix invalid literal suffixes
-        content = content.replace('1e-6d', '1e-6')
-        content = content.replace('0.0d', '0.0')
-        
-        if content != original_content:
-            with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print("Fixed o-voxel src/convert/flexible_dual_grid.cpp for MSVC compatibility.")
-        else:
-            print("o-voxel src/convert/flexible_dual_grid.cpp already fixed or no changes needed.")
+    grid_fixes = [
+        ('1e-6d', '1e-6'),
+        ('0.0d', '0.0'),
+    ]
+    _apply_file_fixes(os.path.join(base_path, 'src/convert/flexible_dual_grid.cpp'), grid_fixes, 'o-voxel src/convert/flexible_dual_grid.cpp')
 
 if __name__ == '__main__':
     if platform.system() == 'Windows':
