@@ -24,7 +24,7 @@ if not exist "%VCPKG_BASE%" (
     echo [ERROR] Could not find vcpkg libraries.
     echo Path checked: "%VCPKG_BASE%"
     echo.
-    echo Did you run: vcpkg install zlib libjpeg-turbo --triplet=x64-windows ?
+    echo Did you run: vcpkg install zlib libjpeg-turbo libwebp --triplet=x64-windows ?
     pause
     exit /b 1
 )
@@ -70,6 +70,7 @@ set "INCLUDE=%INCLUDE%;%VCPKG_BASE%\include"
 set "LIB=%LIB%;%VCPKG_BASE%\lib"
 set "ZLIB_ROOT=%VCPKG_BASE%"
 set "JPEG_ROOT=%VCPKG_BASE%"
+set "WEBP_ROOT=%VCPKG_BASE%"
 
 REM --- STEP 4: Install Dependencies ---
 echo [3/6] Installing build tools...
