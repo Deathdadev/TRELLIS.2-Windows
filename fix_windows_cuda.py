@@ -162,10 +162,26 @@ def fix_o_voxel_files():
     ]
     _apply_file_fixes(os.path.join(base_path, 'src/convert/flexible_dual_grid.cpp'), grid_fixes, 'o-voxel src/convert/flexible_dual_grid.cpp')
 
+def fix_nvdiffrec_manifest():
+    """Create MANIFEST.in for nvdiffrec to include header files."""
+    file_path = 'tmp/extensions/nvdiffrec/MANIFEST.in'
+    
+    if os.path.exists(file_path):
+        print("nvdiffrec MANIFEST.in already exists.")
+        return
+    
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write('recursive-include nvdiffrec_render/renderutils/c_src *.h\n')
+        print("Created nvdiffrec MANIFEST.in for Windows compatibility.")
+    except (OSError, UnicodeEncodeError) as e:
+        print(f"Error creating {file_path}: {e}")
+
 if __name__ == '__main__':
     if platform.system() == 'Windows':
         fix_flexgemm_cuda_file()
         fix_cumesh_setup()
         fix_o_voxel_files()
+        fix_nvdiffrec_manifest()
     else:
         print("Not on Windows, skipping fixes.")
