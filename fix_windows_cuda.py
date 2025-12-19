@@ -164,20 +164,36 @@ def fix_o_voxel_files():
 
 def fix_nvdiffrec_manifest():
     """Create MANIFEST.in for nvdiffrec to include header files."""
-    file_path = 'tmp/extensions/nvdiffrec/MANIFEST.in'
+    manifest_dir = 'tmp/extensions/nvdiffrec'
+    manifest_file = os.path.join(manifest_dir, 'MANIFEST.in')
+    target_dir = os.path.join(manifest_dir, 'nvdiffrec_render', 'renderutils', 'c_src')
     
-    if os.path.exists(file_path):
-        print("nvdiffrec MANIFEST.in already exists.")
+    if not os.path.exists(target_dir):
+        print(f"Warning: Target directory {target_dir} does not exist. Skipping MANIFEST.in creation.")
         return
     
-    dir_path = os.path.dirname(file_path)
+    expected_content = 'recursive-include nvdiffrec_render/renderutils/c_src *.h\n'
+    
+    # Check if file exists and has correct content
+    if os.path.exists(manifest_file):
+        try:
+            with open(manifest_file, 'r', encoding='utf-8') as f:
+                current_content = f.read()
+            if current_content == expected_content:
+                print("nvdiffrec MANIFEST.in already has correct content.")
+                return
+        except (OSError, UnicodeDecodeError) as e:
+            print(f"Error reading existing {manifest_file}: {e}")
+            # Continue to overwrite
+    
+    # Create directory if needed and write file
     try:
-        os.makedirs(dir_path, exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write('recursive-include nvdiffrec_render/renderutils/c_src *.h\n')
-        print("Created nvdiffrec MANIFEST.in for Windows compatibility.")
+        os.makedirs(manifest_dir, exist_ok=True)
+        with open(manifest_file, 'w', encoding='utf-8') as f:
+            f.write(expected_content)
+        print("Created/updated nvdiffrec MANIFEST.in for Windows compatibility.")
     except (OSError, UnicodeEncodeError) as e:
-        print(f"Error creating {file_path}: {e}")
+        print(f"Error creating/updating {manifest_file}: {e}")
 
 if __name__ == '__main__':
     if platform.system() == 'Windows':
