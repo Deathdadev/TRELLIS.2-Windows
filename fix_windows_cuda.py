@@ -170,7 +170,9 @@ def fix_nvdiffrec_manifest():
         print("nvdiffrec MANIFEST.in already exists.")
         return
     
+    dir_path = os.path.dirname(file_path)
     try:
+        os.makedirs(dir_path, exist_ok=True)
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write('recursive-include nvdiffrec_render/renderutils/c_src *.h\n')
         print("Created nvdiffrec MANIFEST.in for Windows compatibility.")
