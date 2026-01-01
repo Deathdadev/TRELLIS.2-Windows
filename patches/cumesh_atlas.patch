@@ -1,0 +1,44 @@
+diff --git a/src/atlas.cu b/src/atlas.cu
+index 53abb11..ce6f55d 100644
+--- a/src/atlas.cu
++++ b/src/atlas.cu
+@@ -3,6 +3,13 @@
+ #include "shared.h"
+ #include <cub/cub.cuh>
+ 
++// Define a type alias for the reduction operation based on CUDA version.
++// This is needed because preprocessor directives cannot be used inside macro arguments.
++#if CUDART_VERSION >= 12090
++    using CubSumOp = ::cuda::std::plus<>;
++#else
++    using CubSumOp = cub::Sum;
++#endif
+ 
+ namespace cumesh {
+ 
+@@ -333,11 +340,7 @@ static void get_chart_connectivity(
+         cu_sorted_lengths,
+         mesh.atlas_chart_adj_length.ptr,
+         cu_num_chart_adjs,
+-#if CUDART_VERSION >= 12090
+-        ::cuda::std::plus(),
+-#else
+-        cub::Sum(),
+-#endif
++        CubSumOp(),
+         M
+     ));
+     mesh.cub_temp_storage.resize(temp_storage_bytes);
+@@ -348,11 +351,7 @@ static void get_chart_connectivity(
+         cu_sorted_lengths,
+         mesh.atlas_chart_adj_length.ptr,
+         cu_num_chart_adjs,
+-#if CUDART_VERSION >= 12090
+-        ::cuda::std::plus(),
+-#else
+-        cub::Sum(),
+-#endif
++        CubSumOp(),
+         M
+     ));
+     CUDA_CHECK(cudaMemcpy(&mesh.atlas_chart_adj.size, cu_num_chart_adjs, sizeof(int), cudaMemcpyDeviceToHost));

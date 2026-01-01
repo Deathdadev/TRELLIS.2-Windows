@@ -1,0 +1,13 @@
+diff --git a/pyproject.toml b/pyproject.toml
+index 1234567..abcdefg 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -29,6 +29,6 @@ dependencies = [
+     "tqdm",
+     "zstandard",
+     "easydict",
+-    "cumesh @ git+https://github.com/JeffreyXiang/CuMesh.git",
+-    "flex_gemm @ git+https://github.com/JeffreyXiang/FlexGEMM.git",
++    "cumesh",
++    "flex_gemm",
+ ]
