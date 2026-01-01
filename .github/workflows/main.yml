@@ -1,0 +1,322 @@
+name: Build CUDA Extension Wheels
+
+on:
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: 'Python version (or "all")'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - '3.10'
+          - '3.11'
+          - '3.12'
+      pytorch_version:
+        description: 'PyTorch version (or "all")'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - '2.4.0'
+          - '2.5.0'
+          - '2.6.0'
+          - '2.7.0'
+      cuda_version:
+        description: 'CUDA version (or "all")'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - '11.8'
+          - '12.1'
+          - '12.4'
+          - '12.8'
+          - '13.0'
+      os:
+        description: 'Operating system (or "all")'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - 'ubuntu-22.04'
+          - 'windows-2022'
+  push:
+    tags:
+      - 'v*'
+
+env:
+  MAX_JOBS: 2  # Limit parallel CUDA compilation to prevent OOM
+
+jobs:
+  # Generate the build matrix based on inputs
+  generate-matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Generate build matrix
+        id: set-matrix
+        run: |
+          # Define all valid PyTorch + CUDA combinations
+          # Format: pytorch:cuda:cuda_arch
+          declare -A VALID_COMBOS
+          
+          # PyTorch 2.4.0 - CUDA 11.8, 12.1, 12.4
+          VALID_COMBOS["2.4.0:11.8"]="7.0;7.5;8.0;8.6;8.9"
+          VALID_COMBOS["2.4.0:12.1"]="7.0;7.5;8.0;8.6;8.9"
+          VALID_COMBOS["2.4.0:12.4"]="7.0;7.5;8.0;8.6;8.9"
+          
+          # PyTorch 2.5.0 - CUDA 11.8, 12.1, 12.4
+          VALID_COMBOS["2.5.0:11.8"]="7.0;7.5;8.0;8.6;8.9"
+          VALID_COMBOS["2.5.0:12.1"]="7.0;7.5;8.0;8.6;8.9"
+          VALID_COMBOS["2.5.0:12.4"]="7.0;7.5;8.0;8.6;8.9"
+          
+          # PyTorch 2.6.0 - CUDA 11.8, 12.1, 12.4, 12.8
+          VALID_COMBOS["2.6.0:11.8"]="7.0;7.5;8.0;8.6;8.9"
+          VALID_COMBOS["2.6.0:12.1"]="7.0;7.5;8.0;8.6;8.9"
+          VALID_COMBOS["2.6.0:12.4"]="7.0;7.5;8.0;8.6;8.9;9.0"
+          VALID_COMBOS["2.6.0:12.8"]="7.0;7.5;8.0;8.6;8.9;9.0;10.0"
+          
+          # PyTorch 2.7.0 - All CUDA versions
+          VALID_COMBOS["2.7.0:11.8"]="7.0;7.5;8.0;8.6;8.9"
+          VALID_COMBOS["2.7.0:12.1"]="7.0;7.5;8.0;8.6;8.9;9.0"
+          VALID_COMBOS["2.7.0:12.4"]="7.0;7.5;8.0;8.6;8.9;9.0"
+          VALID_COMBOS["2.7.0:12.8"]="7.0;7.5;8.0;8.6;8.9;9.0;10.0"
+          VALID_COMBOS["2.7.0:13.0"]="7.0;7.5;8.0;8.6;8.9;9.0;10.0;12.0"
+          
+          # Get inputs (use defaults for tag pushes)
+          PYTHON_INPUT="${{ inputs.python_version || 'all' }}"
+          PYTORCH_INPUT="${{ inputs.pytorch_version || 'all' }}"
+          CUDA_INPUT="${{ inputs.cuda_version || 'all' }}"
+          OS_INPUT="${{ inputs.os || 'all' }}"
+          
+          # Define version arrays
+          if [ "$PYTHON_INPUT" == "all" ]; then
+            PYTHONS=("3.10" "3.11" "3.12")
+          else
+            PYTHONS=("$PYTHON_INPUT")
+          fi
+          
+          if [ "$PYTORCH_INPUT" == "all" ]; then
+            PYTORCHS=("2.4.0" "2.5.0" "2.6.0" "2.7.0")
+          else
+            PYTORCHS=("$PYTORCH_INPUT")
+          fi
+          
+          if [ "$CUDA_INPUT" == "all" ]; then
+            CUDAS=("11.8" "12.1" "12.4" "12.8" "13.0")
+          else
+            CUDAS=("$CUDA_INPUT")
+          fi
+          
+          if [ "$OS_INPUT" == "all" ]; then
+            OSS=("ubuntu-22.04" "windows-2022")
+          else
+            OSS=("$OS_INPUT")
+          fi
+          
+          # Build matrix JSON
+          MATRIX='{"include":['
+          FIRST=true
+          
+          for os in "${OSS[@]}"; do
+            for python in "${PYTHONS[@]}"; do
+              for pytorch in "${PYTORCHS[@]}"; do
+                for cuda in "${CUDAS[@]}"; do
+                  KEY="${pytorch}:${cuda}"
+                  ARCH="${VALID_COMBOS[$KEY]}"
+                  
+                  # Skip invalid combinations
+                  if [ -z "$ARCH" ]; then
+                    continue
+                  fi
+                  
+                  if [ "$FIRST" = true ]; then
+                    FIRST=false
+                  else
+                    MATRIX+=','
+                  fi
+                  
+                  MATRIX+="{\"os\":\"${os}\",\"python\":\"${python}\",\"pytorch\":\"${pytorch}\",\"cuda\":\"${cuda}\",\"cuda_arch\":\"${ARCH}\"}"
+                done
+              done
+            done
+          done
+          
+          MATRIX+=']}'
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "Generated matrix: $MATRIX"
+
+  build:
+    needs: generate-matrix
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      
+      - name: Install CUDA Toolkit ${{ matrix.cuda }} (Linux)
+        if: runner.os == 'Linux'
+        uses: Jimver/cuda-toolkit@v0.2.30
+        with:
+          cuda: ${{ matrix.cuda }}
+          method: network
+          linux-local-args: '["--toolkit"]'
+      
+      - name: Install CUDA Toolkit ${{ matrix.cuda }} (Windows)
+        if: runner.os == 'Windows'
+        uses: Jimver/cuda-toolkit@v0.2.30
+        with:
+          cuda: ${{ matrix.cuda }}
+          method: network
+      
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip wheel setuptools ninja
+      
+      - name: Install PyTorch ${{ matrix.pytorch }} (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          CUDA_TAG=$(echo "${{ matrix.cuda }}" | tr -d '.')
+          pip install torch==${{ matrix.pytorch }} --index-url https://download.pytorch.org/whl/cu${CUDA_TAG}
+      
+      - name: Install PyTorch ${{ matrix.pytorch }} (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $CUDA_TAG = "${{ matrix.cuda }}" -replace '\.',''
+          pip install torch==${{ matrix.pytorch }} --index-url https://download.pytorch.org/whl/cu$CUDA_TAG
+      
+      - name: Clone extensions
+        run: |
+          git clone -b v0.4.0 https://github.com/NVlabs/nvdiffrast.git extensions/nvdiffrast
+          git clone -b renderutils https://github.com/JeffreyXiang/nvdiffrec.git extensions/nvdiffrec
+          git clone --recursive https://github.com/JeffreyXiang/CuMesh.git extensions/CuMesh
+          git clone --recursive https://github.com/JeffreyXiang/FlexGEMM.git extensions/FlexGEMM
+      
+      - name: Copy and prepare o-voxel (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cp -r o-voxel extensions/o-voxel
+      
+      - name: Copy and prepare o-voxel (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          xcopy /E /I /Y o-voxel extensions\o-voxel
+      
+      - name: Apply patches (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          cd extensions/CuMesh
+          patch -p1 --forward < ../../patches/cumesh_atlas.patch || true
+          cd ../o-voxel
+          patch -p1 --forward < ../../patches/ovoxel_pyproject.patch || true
+          patch -p1 --forward < ../../patches/ovoxel_pr59.patch || true
+          patch -p1 --forward < ../../patches/ovoxel_pr60.patch || true
+          patch -p1 --forward < ../../patches/ovoxel_pr61.patch || true
+      
+      - name: Apply patches (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd extensions/CuMesh
+          patch -p1 --forward < ../../patches/cumesh_atlas.patch || echo "CuMesh patch skipped"
+          cd ../o-voxel
+          patch -p1 --forward < ../../patches/ovoxel_pyproject.patch || echo "patch skipped"
+          patch -p1 --forward < ../../patches/ovoxel_pr59.patch || echo "patch skipped"
+          patch -p1 --forward < ../../patches/ovoxel_pr60.patch || echo "patch skipped"
+          patch -p1 --forward < ../../patches/ovoxel_pr61.patch || echo "patch skipped"
+      
+      - name: Build nvdiffrast wheel
+        env:
+          TORCH_CUDA_ARCH_LIST: ${{ matrix.cuda_arch }}
+          MAX_JOBS: ${{ env.MAX_JOBS }}
+        run: |
+          pip wheel extensions/nvdiffrast --no-build-isolation --wheel-dir dist/
+      
+      - name: Build nvdiffrec wheel
+        env:
+          TORCH_CUDA_ARCH_LIST: ${{ matrix.cuda_arch }}
+          MAX_JOBS: ${{ env.MAX_JOBS }}
+        run: |
+          pip wheel extensions/nvdiffrec --no-build-isolation --wheel-dir dist/
+      
+      - name: Build CuMesh wheel
+        env:
+          TORCH_CUDA_ARCH_LIST: ${{ matrix.cuda_arch }}
+          MAX_JOBS: ${{ env.MAX_JOBS }}
+        run: |
+          pip wheel extensions/CuMesh --no-build-isolation --wheel-dir dist/
+      
+      - name: Build FlexGEMM wheel
+        env:
+          TORCH_CUDA_ARCH_LIST: ${{ matrix.cuda_arch }}
+          MAX_JOBS: ${{ env.MAX_JOBS }}
+        run: |
+          pip wheel extensions/FlexGEMM --no-build-isolation --wheel-dir dist/
+      
+      - name: Build o-voxel wheel
+        env:
+          TORCH_CUDA_ARCH_LIST: ${{ matrix.cuda_arch }}
+          MAX_JOBS: ${{ env.MAX_JOBS }}
+        run: |
+          pip wheel extensions/o-voxel --no-build-isolation --wheel-dir dist/
+      
+      - name: Rename wheels with version info
+        shell: bash
+        run: |
+          cd dist
+          CUDA_TAG=$(echo "${{ matrix.cuda }}" | tr -d '.')
+          TORCH_TAG=$(echo "${{ matrix.pytorch }}" | tr -d '.')
+          
+          for wheel in *.whl; do
+            if [[ -f "$wheel" ]]; then
+              # Insert cuda/torch version before cp tag
+              newname=$(echo "$wheel" | sed "s/-cp/+cu${CUDA_TAG}torch${TORCH_TAG}-cp/")
+              mv "$wheel" "$newname" 2>/dev/null || true
+            fi
+          done
+          ls -la
+      
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheels-py${{ matrix.python }}-torch${{ matrix.pytorch }}-cu${{ matrix.cuda }}-${{ matrix.os }}
+          path: dist/*.whl
+          retention-days: 30
+
+  # Combine all wheels into a single release artifact
+  combine-wheels:
+    needs: build
+    runs-on: ubuntu-latest
+    if: always() && !cancelled()
+    steps:
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v6
+        with:
+          path: all-wheels
+          pattern: wheels-*
+          merge-multiple: true
+      
+      - name: Upload combined wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: all-wheels-combined
+          path: all-wheels/*.whl
+          retention-days: 90
