@@ -63,8 +63,33 @@ jobs:
         id: set-matrix
         run: |
           # Define all valid PyTorch + CUDA combinations
-          # Format: pytorch:cuda:cuda_arch
+          # Format: pytorch:cuda -> cuda_arch
           declare -A VALID_COMBOS
+          
+          # Function to get latest CUDA patch version from Jimver/cuda-toolkit supported versions
+          # Fetches the linux-links.ts file and extracts versions matching the major.minor prefix
+          get_latest_cuda_version() {
+            local prefix="$1"
+            # Fetch supported versions from Jimver/cuda-toolkit source
+            local versions=$(curl -sL "https://raw.githubusercontent.com/Jimver/cuda-toolkit/master/src/links/linux-links.ts" | \
+              grep -oE "'[0-9]+\.[0-9]+\.[0-9]+'" | tr -d "'" | sort -V)
+            # Find latest version matching the prefix
+            echo "$versions" | grep "^${prefix}\." | tail -1
+          }
+          
+          # Resolve CUDA versions dynamically
+          declare -A CUDA_LATEST_PATCH
+          for v in "11.8" "12.1" "12.4" "12.8" "13.0"; do
+            resolved=$(get_latest_cuda_version "$v")
+            if [ -n "$resolved" ]; then
+              CUDA_LATEST_PATCH["$v"]="$resolved"
+              echo "Resolved CUDA $v -> $resolved"
+            else
+              # Fallback to .0 if not found
+              CUDA_LATEST_PATCH["$v"]="${v}.0"
+              echo "Warning: Could not resolve CUDA $v, using ${v}.0"
+            fi
+          done
           
           # PyTorch 2.4.0 - CUDA 11.8, 12.1, 12.4
           VALID_COMBOS["2.4.0:11.8"]="7.0;7.5;8.0;8.6;8.9"
@@ -142,7 +167,9 @@ jobs:
                     MATRIX+=','
                   fi
                   
-                  MATRIX+="{\"os\":\"${os}\",\"python\":\"${python}\",\"pytorch\":\"${pytorch}\",\"cuda\":\"${cuda}\",\"cuda_arch\":\"${ARCH}\"}"
+                  # Resolve to latest patch version for CUDA toolkit installation
+                  CUDA_FULL="${CUDA_LATEST_PATCH[$cuda]}"
+                  MATRIX+="{\"os\":\"${os}\",\"python\":\"${python}\",\"pytorch\":\"${pytorch}\",\"cuda\":\"${cuda}\",\"cuda_full\":\"${CUDA_FULL}\",\"cuda_arch\":\"${ARCH}\"}"
                 done
               done
             done
@@ -170,19 +197,19 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       
-      - name: Install CUDA Toolkit ${{ matrix.cuda }} (Linux)
+      - name: Install CUDA Toolkit ${{ matrix.cuda_full }} (Linux)
         if: runner.os == 'Linux'
         uses: Jimver/cuda-toolkit@v0.2.30
         with:
-          cuda: ${{ matrix.cuda }}
+          cuda: ${{ matrix.cuda_full }}
           method: network
           linux-local-args: '["--toolkit"]'
       
-      - name: Install CUDA Toolkit ${{ matrix.cuda }} (Windows)
+      - name: Install CUDA Toolkit ${{ matrix.cuda_full }} (Windows)
         if: runner.os == 'Windows'
         uses: Jimver/cuda-toolkit@v0.2.30
         with:
-          cuda: ${{ matrix.cuda }}
+          cuda: ${{ matrix.cuda_full }}
           method: network
       
       - name: Install build dependencies
