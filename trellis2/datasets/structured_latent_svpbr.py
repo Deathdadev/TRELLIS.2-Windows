@@ -1,14 +1,17 @@
 import os
+os.environ['OPENCV_IO_ENABLE_OPENEXR'] = '1'
 import json
 from typing import *
 import numpy as np
 import torch
+import cv2
 from .. import models
 from .components import StandardDatasetBase, ImageConditionedMixin
 from ..modules.sparse import SparseTensor, sparse_cat
 from ..representations import MeshWithVoxel
+from ..renderers import PbrMeshRenderer, EnvMap
 from ..utils.data_utils import load_balanced_group_indices
-from ..utils.render_utils import get_renderer, yaw_pitch_r_fov_to_extrinsics_intrinsics
+from ..utils.render_utils import yaw_pitch_r_fov_to_extrinsics_intrinsics
 
 
 class SLatPbrVisMixin:
@@ -47,12 +50,12 @@ class SLatPbrVisMixin:
 
         if self.shape_slat_dec_path is not None:
             cfg = json.load(open(os.path.join(self.shape_slat_dec_path, 'config.json'), 'r'))
-            cfg['models']['decoder']['args']['resolution'] = self.resolution
             decoder = getattr(models, cfg['models']['decoder']['name'])(**cfg['models']['decoder']['args'])
             ckpt_path = os.path.join(self.shape_slat_dec_path, 'ckpts', f'decoder_{self.shape_slat_dec_ckpt}.pt')
             decoder.load_state_dict(torch.load(ckpt_path, map_location='cpu', weights_only=True))
         else:
             decoder = models.from_pretrained(self.pretrained_shape_slat_dec)
+        decoder.set_resolution(self.resolution)
         self.shape_slat_dec = decoder.cuda().eval()
 
     def _delete_slat_dec(self):
@@ -71,7 +74,7 @@ class SLatPbrVisMixin:
             z = z * self.pbr_slat_std.to(z.device) + self.pbr_slat_mean.to(z.device)
         for i in range(0, z.shape[0], batch_size):
             mesh, subs = self.shape_slat_dec(shape_z[i:i+batch_size], return_subs=True)
-            vox = self.pbr_slat_dec(z[i:i+batch_size], guide_subs=subs)
+            vox = self.pbr_slat_dec(z[i:i+batch_size], guide_subs=subs) * 0.5 + 0.5
             reps.extend([
                 MeshWithVoxel(
                     m.vertices, m.faces,
@@ -101,18 +104,32 @@ class SLatPbrVisMixin:
         exts, ints = yaw_pitch_r_fov_to_extrinsics_intrinsics(yaw, pitch, 2, 30)
         
         # render
-        renderer = get_renderer(reps[0])
-        images = {k: [] for k in self.layout}
+        renderer = PbrMeshRenderer()
+        renderer.rendering_options.resolution = 512
+        renderer.rendering_options.near = 1
+        renderer.rendering_options.far = 100
+        renderer.rendering_options.ssaa = 2
+        renderer.rendering_options.peel_layers = 8
+        envmap = EnvMap(torch.tensor(
+            cv2.cvtColor(cv2.imread('assets/hdri/forest.exr', cv2.IMREAD_UNCHANGED), cv2.COLOR_BGR2RGB),
+            dtype=torch.float32, device='cuda'
+        ))
+        
+        images = {}
         for representation in reps:
-            image = {k: torch.zeros(3, 1024, 1024).cuda() for k in self.layout}
+            image = {}
             tile = [2, 2]
             for j, (ext, intr) in enumerate(zip(exts, ints)):
-                res = renderer.render(representation, ext, intr, return_types=['attr'])
-                for k in self.layout:
-                    image[k][:, 512 * (j // tile[1]):512 * (j // tile[1] + 1), 512 * (j % tile[1]):512 * (j % tile[1] + 1)] = res[k]
-            for k in self.layout:
+                res = renderer.render(representation, ext, intr, envmap=envmap)
+                for k, v in res.items():
+                    if k not in images:
+                        images[k] = []
+                    if k not in image:
+                        image[k] = torch.zeros(3, 1024, 1024).cuda()  
+                    image[k][:, 512 * (j // tile[1]):512 * (j // tile[1] + 1), 512 * (j % tile[1]):512 * (j % tile[1] + 1)] = v
+            for k in images.keys():
                 images[k].append(image[k])
-        for k in self.layout:
+        for k in images.keys():
             images[k] = torch.stack(images[k], dim=0)
         return images
     
@@ -156,7 +173,7 @@ class SLatPbr(SLatPbrVisMixin, StandardDatasetBase):
         self.min_aesthetic_score = min_aesthetic_score
         self.max_tokens = max_tokens
         self.full_pbr = full_pbr
-        self.value_range = (-1, 1)
+        self.value_range = (0, 1)
         
         super().__init__(
             roots,

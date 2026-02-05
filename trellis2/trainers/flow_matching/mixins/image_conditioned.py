@@ -138,6 +138,7 @@ class ImageConditionedMixin:
         """
         with dist_utils.local_master_first():
             self.image_cond_model = globals()[self.image_cond_model_config['name']](**self.image_cond_model_config.get('args', {}))
+            self.image_cond_model.cuda()
     
     @torch.no_grad()
     def encode_image(self, image: Union[torch.Tensor, List[Image.Image]]) -> torch.Tensor:

@@ -250,9 +250,19 @@ class PbrMeshRenderer:
         ssaa = self.rendering_options["ssaa"]
         
         if mesh.vertices.shape[0] == 0 or mesh.faces.shape[0] == 0:
-            return edict(
-                shaded=torch.full((4, resolution, resolution), 0.5, dtype=torch.float32, device=self.device),
+            out_dict = edict(
+                normal=torch.zeros((3, resolution, resolution), dtype=torch.float32, device=self.device),
+                mask=torch.zeros((resolution, resolution), dtype=torch.float32, device=self.device),
+                base_color=torch.zeros((3, resolution, resolution), dtype=torch.float32, device=self.device),
+                metallic=torch.zeros((resolution, resolution), dtype=torch.float32, device=self.device),
+                roughness=torch.zeros((resolution, resolution), dtype=torch.float32, device=self.device),
+                alpha=torch.zeros((resolution, resolution), dtype=torch.float32, device=self.device),
+                clay=torch.zeros((resolution, resolution), dtype=torch.float32, device=self.device),
             )
+            for i, k in enumerate(envmap.keys()):
+                shaded_key = f"shaded_{k}" if k != '' else "shaded"
+                out_dict[shaded_key] = torch.zeros((3, resolution, resolution), dtype=torch.float32, device=self.device)
+            return out_dict
             
         rays_o, rays_d = utils3d.torch.get_image_rays(
             extrinsics, intrinsics, resolution * ssaa, resolution * ssaa

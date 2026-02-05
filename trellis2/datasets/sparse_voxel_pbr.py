@@ -10,10 +10,10 @@ import utils3d
 from .components import StandardDatasetBase
 from ..modules import sparse as sp
 from ..renderers import VoxelRenderer
-from ..representations.mesh import Voxel, MeshWithPbrMaterial, TextureFilterMode, TextureWrapMode, AlphaMode, PbrMaterial, Texture
+from ..representations import Voxel
+from ..representations.mesh import MeshWithPbrMaterial, TextureFilterMode, TextureWrapMode, AlphaMode, PbrMaterial, Texture
 
 from ..utils.data_utils import load_balanced_group_indices
-from ..utils.mesh_utils import subdivide_to_size
 
 
 def is_power_of_two(n: int) -> bool:
@@ -71,7 +71,7 @@ class SparseVoxelPbrVisMixin:
                 origin=[-0.5, -0.5, -0.5],
                 voxel_size=1/self.resolution,
                 coords=x[i].coords[:, 1:].contiguous(),
-                attrs=attr,
+                attrs=None,
                 layout={
                     'color': slice(0, 3),
                 }
@@ -81,7 +81,7 @@ class SparseVoxelPbrVisMixin:
                 tile = [2, 2]
                 for j, (ext, intr) in enumerate(zip(exts, ints)):
                     attr = x[i].feats[:, self.layout[k]].expand(-1, 3)
-                    res = renderer.render(rep, ext, intr)
+                    res = renderer.render(rep, ext, intr, colors_overwrite=attr)
                     image[:, 512 * (j // tile[1]):512 * (j // tile[1] + 1), 512 * (j % tile[1]):512 * (j % tile[1] + 1)] = res['color']
                 images[k].append(image)
         

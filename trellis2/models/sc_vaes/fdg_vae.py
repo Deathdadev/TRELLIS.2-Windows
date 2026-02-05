@@ -87,8 +87,8 @@ class FlexiDualGridVaeDecoder(SparseUnetVaeDecoder):
             vertices = h.replace((1 + 2 * self.voxel_margin) * F.sigmoid(h.feats[..., 0:3]) - self.voxel_margin)
             intersected_logits = h.replace(h.feats[..., 3:6])
             quad_lerp = h.replace(F.softplus(h.feats[..., 6:7]))
-            mesh = [Mesh(flexible_dual_grid_to_mesh(
-                h.coords[:, 1:], v.feats, i.feats, q.feats,
+            mesh = [Mesh(*flexible_dual_grid_to_mesh(
+                v.coords[:, 1:], v.feats, i.feats, q.feats,
                 aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
                 grid_size=self.resolution,
                 train=True
@@ -101,7 +101,7 @@ class FlexiDualGridVaeDecoder(SparseUnetVaeDecoder):
             intersected = h.replace(h.feats[..., 3:6] > 0)
             quad_lerp = h.replace(F.softplus(h.feats[..., 6:7]))
             mesh = [Mesh(*flexible_dual_grid_to_mesh(
-                h.coords[:, 1:], v.feats, i.feats, q.feats,
+                v.coords[:, 1:], v.feats, i.feats, q.feats,
                 aabb=[[-0.5, -0.5, -0.5], [0.5, 0.5, 0.5]],
                 grid_size=self.resolution,
                 train=False

@@ -16,12 +16,12 @@ class SLatShapeVisMixin(SLatVisMixin):
             return
         if self.slat_dec_path is not None:
             cfg = json.load(open(os.path.join(self.slat_dec_path, 'config.json'), 'r'))
-            cfg['models']['decoder']['args']['resolution'] = self.resolution
             decoder = getattr(models, cfg['models']['decoder']['name'])(**cfg['models']['decoder']['args'])
             ckpt_path = os.path.join(self.slat_dec_path, 'ckpts', f'decoder_{self.slat_dec_ckpt}.pt')
             decoder.load_state_dict(torch.load(ckpt_path, map_location='cpu', weights_only=True))
         else:
             decoder = models.from_pretrained(self.pretrained_slat_dec)
+        decoder.set_resolution(self.resolution)
         self.slat_dec = decoder.cuda().eval()
 
     @torch.no_grad()
@@ -72,7 +72,7 @@ class SLatShape(SLatShapeVisMixin, SLat):
         min_aesthetic_score: float = 5.0,
         max_tokens: int = 32768,
         normalization: Optional[dict] = None,
-        pretrained_slat_dec: str = 'JeffreyXiang/TRELLIS.2-4B/ckpts/shape_dec_next_dc_f16c32_fp16',
+        pretrained_slat_dec: str = 'microsoft/TRELLIS.2-4B/ckpts/shape_dec_next_dc_f16c32_fp16',
         slat_dec_path: Optional[str] = None,
         slat_dec_ckpt: Optional[str] = None,
     ):

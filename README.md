@@ -50,7 +50,7 @@ Data processing is streamlined for instant conversions that are fully **renderin
 - [x] Release pretrained checkpoints (4B)
 - [x] Hugging Face Spaces demo
 - [x] Release shape-conditioned texture generation inference code
-- [ ] Release training code (Current schdule: before 12/31/2025)
+- [x] Release training code
 
 
 ## 🛠️ Installation
@@ -185,6 +185,117 @@ Then, you can access the demo at the address shown in the terminal.
 ### 2. PBR Texture Generation
 
 Please refer to the [example_texturing.py](example_texturing.py) for an example of how to generate PBR textures for a given 3D shape. Also, you can use the [app_texturing.py](app_texturing.py) to run a web demo for PBR texture generation.
+
+
+## 🏋️ Training
+
+We provide the full training codebase, enabling users to train **TRELLIS.2** from scratch or fine-tune it on custom datasets.
+
+### 1. Data Preparation
+
+Before training, raw 3D assets must be converted into the **O-Voxel** representation. This process includes mesh conversion, compact structured latent generation, and metadata preparation.
+
+> 📂 **Please refer to [data_toolkit/README.md](data_toolkit/README.md) for detailed instructions on data preprocessing and dataset organization.**
+
+### 2. Running Training
+
+Training is managed through the `train.py` script, which accepts multiple command-line arguments to configure experiments:
+
+* `--config`: Path to the experiment configuration file.
+* `--output_dir`: Directory for training outputs.
+* `--load_dir`: Directory to load checkpoints from (defaults to `output_dir`).
+* `--ckpt`: Checkpoint step to resume from (defaults to the latest).
+* `--data_dir`: Dataset path or a JSON string specifying dataset locations.
+* `--auto_retry`: Number of automatic retries upon failure.
+* `--tryrun`: Perform a dry run without actual training.
+* `--profile`: Enable training profiling.
+* `--num_nodes`: Number of nodes for distributed training.
+* `--node_rank`: Rank of the current node.
+* `--num_gpus`: Number of GPUs per node (defaults to all available GPUs).
+* `--master_addr`: Master node address for distributed training.
+* `--master_port`: Port for distributed training communication.
+
+
+### SC-VAE Training
+
+
+To train the shape SC-VAE, run:
+
+```sh
+python train.py \
+  --config configs/scvae/shape_vae_next_dc_f16c32_fp16.json \
+  --output_dir results/shape_vae_next_dc_f16c32_fp16 \
+  --data_dir "{\"ObjaverseXL_sketchfab\": {\"base\": \"datasets/ObjaverseXL_sketchfab\", \"mesh_dump\": \"datasets/ObjaverseXL_sketchfab/mesh_dumps\", \"dual_grid\": \"datasets/ObjaverseXL_sketchfab/dual_grid_256\", \"asset_stats\": \"datasets/ObjaverseXL_sketchfab/asset_stats\"}}"
+```
+
+This command trains the shape SC-VAE on the **Objaverse-XL** dataset using the `shape_vae_next_dc_f16c32_fp16.json` configuration. Training outputs will be saved to `results/shape_vae_next_dc_f16c32_fp16`.
+
+The dataset is specified as a JSON string, where each dataset entry includes:
+
+* `base`: Root directory of the dataset.
+* `mesh_dump`: Directory containing preprocessed mesh dumps.
+* `dual_grid`: Directory with precomputed dual-grid representations.
+* `asset_stats`: Directory containing precomputed asset statistics.
+
+To fine-tune the model at a higher resolution, use the `shape_vae_next_dc_f16c32_fp16_ft_512.json` configuration. Remember to update the `finetune_ckpt` field and adjust the dataset paths accordingly.
+
+
+To train the texture SC-VAE, run:
+
+```sh
+python train.py \
+  --config configs/scvae/tex_vae_next_dc_f16c32_fp16.json \
+  --output_dir results/tex_vae_next_dc_f16c32_fp16 \
+  --data_dir "{\"ObjaverseXL_sketchfab\": {\"base\": \"datasets/ObjaverseXL_sketchfab\", \"pbr_dump\": \"datasets/ObjaverseXL_sketchfab/pbr_dumps\", \"pbr_voxel\": \"datasets/ObjaverseXL_sketchfab/pbr_voxels_256\", \"asset_stats\": \"datasets/ObjaverseXL_sketchfab/asset_stats\"}}"
+```
+
+
+### Flow Model Training
+
+To train the sparse structure flow model, run:
+
+```sh
+python train.py \
+  --config configs/gen/ss_flow_img_dit_1_3B_64_bf16.json \
+  --output_dir results/ss_flow_img_dit_1_3B_64_bf16 \
+  --data_dir "{\"ObjaverseXL_sketchfab\": {\"base\": \"datasets/ObjaverseXL_sketchfab\", \"ss_latent\": \"datasets/ObjaverseXL_sketchfab/ss_latents/ss_enc_conv3d_16l8_fp16_64\", \"render_cond\": \"datasets/ObjaverseXL_sketchfab/renders_cond\"}}"
+```
+
+This command trains the sparse-structure flow model on the **Objaverse-XL** dataset using the specified configuration file. Outputs are saved to `results/ss_flow_img_dit_1_3B_64_bf16`.
+
+The dataset configuration includes:
+
+* `base`: Root dataset directory.
+* `ss_latent`: Directory containing precomputed sparse-structure latents.
+* `render_cond`: Directory containing conditional rendering images.
+
+
+The second- and third-stage flow models for shape and texture generation can be trained using the following configurations:
+
+* Shape flow: `slat_flow_img2shape_dit_1_3B_512_bf16.json`
+* Texture flow: `slat_flow_imgshape2tex_dit_1_3B_512_bf16.json`
+
+Example commands:
+
+```sh
+# Shape flow model
+python train.py \
+  --config configs/gen/slat_flow_img2shape_dit_1_3B_512_bf16.json \
+  --output_dir results/slat_flow_img2shape_dit_1_3B_512_bf16 \
+  --data_dir "{\"ObjaverseXL_sketchfab\": {\"base\": \"datasets/ObjaverseXL_sketchfab\", \"shape_latent\": \"datasets/ObjaverseXL_sketchfab/shape_latents/shape_enc_next_dc_f16c32_fp16_512\", \"render_cond\": \"datasets/ObjaverseXL_sketchfab/renders_cond\"}}"
+
+# Texture flow model
+python train.py \
+  --config configs/gen/slat_flow_imgshape2tex_dit_1_3B_512_bf16.json \
+  --output_dir results/slat_flow_imgshape2tex_dit_1_3B_512_bf16 \
+  --data_dir "{\"ObjaverseXL_sketchfab\": {\"base\": \"datasets/ObjaverseXL_sketchfab\", \"shape_latent\": \"datasets/ObjaverseXL_sketchfab/shape_latents/shape_enc_next_dc_f16c32_fp16_512\", \"pbr_latent\": \"datasets/ObjaverseXL_sketchfab/pbr_latents/tex_enc_next_dc_f16c32_fp16_512\", \"render_cond\": \"datasets/ObjaverseXL_sketchfab/renders_cond\"}}"
+```
+
+Higher-resolution fine-tuning can be performed by updating the `finetune_ckpt` field in the following configuration files and adjusting the dataset paths accordingly:
+
+* `slat_flow_img2shape_dit_1_3B_512_bf16_ft1024.json`
+* `slat_flow_imgshape2tex_dit_1_3B_512_bf16_ft1024.json`
+
 
 ## 🧩 Related Packages
 
